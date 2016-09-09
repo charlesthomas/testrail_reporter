@@ -24,7 +24,6 @@ class TestRailReporter(Plugin):
         self.results = dict()
         if self.client is not None:
             self.existing_cases    = self._build_cases()
-            self.existing_sections = self._build_sections()
 
     def configure(self, options, conf):
         super(TestRailReporter, self).configure(options, conf)
@@ -38,15 +37,16 @@ class TestRailReporter(Plugin):
         self.project_id = int(options.testrail_project_id or -1)
         self.run_name   = options.testrail_run_name
         self.skip_id    = int(options.testrail_skip_id or 1)
-        self.suite_id   = int(options.testrail_suite_id or -1)
         self.url        = options.testrail_url
+
+        self.catchall_suite   = None
+        self.catchall_section = None
 
         if  self.url \
         and self.email \
         and self.api_key \
         and self.run_name \
-        and self.project_id >= 0 \
-        and self.suite_id >= 0:
+        and self.project_id >= 0:
             self.client = TestRail(project_id=self.project_id, email=self.email,
                                    key=self.api_key, url=self.url)
         else:
@@ -60,7 +60,6 @@ class TestRailReporter(Plugin):
                 --testrail_email      current value: {email}
                 --testrail_project_id current value: {pid}
                 --testrail_run_name   current value: {run}
-                --testrail_suite_id   current value: {sid}
                 --testrail_url        current value: {url}
                 ''')
             warning = warning.format(api=self.api_key, email=self.email,
@@ -78,7 +77,6 @@ class TestRailReporter(Plugin):
         parser.add_option('--testrail_project_id', dest='testrail_project_id')
         parser.add_option('--testrail_run_name',   dest='testrail_run_name')
         parser.add_option('--testrail_skip_id',    dest='testrail_skip_id')
-        parser.add_option('--testrail_suite_id',   dest='testrail_suite_id')
         parser.add_option('--testrail_url',        dest='testrail_url')
 
     def finalize(self, result):
@@ -86,10 +84,13 @@ class TestRailReporter(Plugin):
 
     def _build_cases(self):
         returned_cases = dict()
-        raw_cases = self.client.api.cases(suite_id=self.suite_id)
-        for case in raw_cases:
-            returned_cases[case['title']] = dict(case_id=case['id'],
-                                                 section_id=case['section_id'])
+        suites = self.client.api.suites(project_id=self.project_id)
+        for suite in suites:
+            raw_cases = self.client.api.cases(suite_id=suite['id'])
+            for case in raw_cases:
+                returned_cases[case['title']] = dict(case_id=case['id'],
+                                                     suite_id=suite['id'],
+                                                     section_id=case['section_id'])
         return returned_cases
 
     def _build_results(self, run_id):
@@ -120,17 +121,17 @@ class TestRailReporter(Plugin):
         if self.client is None:
             return
 
-        case = test.id()
+        # nosetests weirdness here, but it gets us the correct
+        # test._testMethodDoc
+        test = test.test
+
+        case = test._testMethodDoc or test.id()
         if case in self.existing_cases.keys():
             case_id = self.existing_cases[case]['case_id']
         else:
-            section = test.id().split('.')[1].replace('test_', '')
-            if section not in self.existing_sections.keys():
-                section_id = self._create_section(name=section)
-            else:
-                section_id = self.existing_sections[section]['section_id']
-            case_id = self._create_case(case, section_id)
-
+            section = getattr(test, '_section_id', None) or self.catchall_section or \
+                      self._fetch_catchall_section(test)
+            case_id = self._create_case(case, section)
         self.results[case_id] = status_id
 
     def _create_case(self, case, section_id):
@@ -140,13 +141,30 @@ class TestRailReporter(Plugin):
         self.existing_cases[case] = dict(case_id=case_id, section_id=section_id)
         return case_id
 
-    def _create_section(self, name):
-        payload = dict(project_id=self.project_id, suite_id=self.suite_id,
-                       name=name)
+    def _create_section(self, name, suite_id):
+        payload = dict(project_id=self.project_id, suite_id=suite_id, name=name)
         response = self.client.api.add_section(payload)
         section_id = response['id']
-        self.existing_sections[name] = dict(section_id=section_id)
         return section_id
+
+    def _create_suite(self, name):
+        payload = dict(project_id=self.project_id, name=name)
+        response = self.client.api.add_suite(payload)
+        suite_id = response['id']
+        return suite_id
+
+    def _fetch_catchall_section(self, test):
+        suite = getattr(test, '_suite_id', None) or self.catchall_suite or \
+                self._fetch_catchall_suite()
+
+        section_id = self._create_section('catchall', suite)
+        self.catchall_section = section_id
+        return section_id
+
+    def _fetch_catchall_suite(self):
+        suite_id = self._create_suite('catchall')
+        self.catchall_suite = suite_id
+        return suite_id
 
     def _fetch_run_id(self):
         raw_runs = self.client.api.runs(self.project_id)
