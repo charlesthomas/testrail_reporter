@@ -21,7 +21,7 @@ setup(
     entry_points = {'nose.plugins.0.10':
                     ['testrail_reporter = testrail_reporter.testrail_reporter:TestRailReporter']},
     install_requires=['nose >= 1.3.7',
-                      'testrail >= 0.3.5',],
+                      'testrail >= 0.3.6',],
     classifiers=['Development Status :: 4 - Beta',
                  'Intended Audience :: Developers',
 		 'Natural Language :: English',
