@@ -269,4 +269,5 @@ class TestRailReporter(Plugin):
         for suite_id in self.results.keys():
             run_id = self.create_plan_entry(plan_id, suite_id)
             results = self.generate_results(run_id, suite_id)
-            self.client.add_results(results, run_id)
+            if len(results) > 0:
+                self.client.add_results(results, run_id)
