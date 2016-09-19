@@ -1,3 +1,5 @@
+from __future__ import print_function
+from pprint import pprint
 from sys import exit
 from textwrap import dedent
 from warnings import warn
@@ -18,12 +20,9 @@ class TestRailReporter(Plugin):
         super(TestRailReporter, self).options(parser, env)
         parser.add_option('--testrail_api_key', dest='api_key',
                           help='API Key provided by TestRail')
-        parser.add_option('--testrail_no_catchall', dest='no_catchall',
-                          help=dedent('''If no suite or section ID can be
-                                      determined, DO NOT create a default
-                                      "catchall". Will result in test cases NOT
-                                      being created if suite or section ID is
-                                      missing.'''))
+        parser.add_option('--testrail_debug_results', dest='debug_results',
+                          help=dedent('''Dump results to screen before trying
+                                      to push results to TestRail.'''))
         parser.add_option('--testrail_email', dest='email',
                           help='The email address you use to sign in to Testrail')
         parser.add_option('--testrail_error_id', dest='error_id',
@@ -34,6 +33,12 @@ class TestRailReporter(Plugin):
                           help=dedent('''Name of the TestRail Milestone you
                                       want to associate with current TestRail
                                       Test Plan'''))
+        parser.add_option('--testrail_no_catchall', dest='no_catchall',
+                          help=dedent('''If no suite or section ID can be
+                                      determined, DO NOT create a default
+                                      "catchall". Will result in test cases NOT
+                                      being created if suite or section ID is
+                                      missing.'''))
         parser.add_option('--testrail_project_id', dest='project_id',
                           help='The TestRail Project ID for this project.')
         parser.add_option('--testrail_plan_name', dest='plan_name',
@@ -52,10 +57,11 @@ class TestRailReporter(Plugin):
         if not self.enabled:
             return
         self.api_key        = options.api_key
-        self.no_catchall    = bool(options.no_catchall)
+        self.debug_results  = bool(options.debug_results)
         self.email          = options.email
         self.error_id       = int(options.error_id or 5)
         self.milestone_name = options.milestone_name
+        self.no_catchall    = bool(options.no_catchall)
         self.project_id     = int(options.project_id or -1)
         self.plan_name      = options.plan_name
         self.skip_id        = int(options.skip_id or 1)
@@ -269,5 +275,9 @@ class TestRailReporter(Plugin):
         for suite_id in self.results.keys():
             run_id = self.create_plan_entry(plan_id, suite_id)
             results = self.generate_results(run_id, suite_id)
+            if self.debug_results:
+                print('suite id: {}'.format(suite_id))
+                pprint(results)
+                print('-'*25)
             if len(results) > 0:
                 self.client.add_results(results, run_id)
